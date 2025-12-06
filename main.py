@@ -6,112 +6,140 @@ st.set_page_config(page_title="LaTeX表作成ツール", layout="wide")
 st.title("📊 LaTeX表作成ツール")
 
 st.markdown("""
-このツールで表を作成し、リアルタイムでLaTeX形式のコードを生成できます。
-また、Notionなどのツールからコピーした表を貼り付けてLaTeX形式に変換することもできます。
+このツールで表を作成し，リアルタイムでLaTeX形式のコードを生成できます．
+また，Notionなどのツールからコピーした表を貼り付けてLaTeX形式に変換することもできます．
 """)
 
 # タブ区切りのテキストをDataFrameに変換する関数
+import pandas as pd
+
 def parse_tab_separated_text(text, use_first_row_as_header=True, use_first_column_as_index=False):
-    """タブ区切りのテキストをDataFrameに変換"""
+    """
+    タブ区切りのテキストをDataFrameに変換．
+    - 列数は行ごとの最大列数で揃える
+    - 左上セルは空白化せず，必要に応じてインデックスに設定
+    """
     if not text.strip():
         return pd.DataFrame()
 
     lines = text.strip().split('\n')
     data = []
 
+    # 各行をタブで分割
     for line in lines:
-        # タブで分割（連続するタブも考慮）
         cells = line.split('\t')
-        # 空のセルをNoneに変換（空文字列もNoneに）
-        cells = [cell.strip() if cell.strip() else None for cell in cells]
-        if cells:  # 空行でない場合のみ追加
-            data.append(cells)
+        cells = [c.strip() for c in cells]
+        data.append(cells)
 
-    if not data:
-        return pd.DataFrame()
-
-    # 最大列数に合わせてNoneで埋める
+    # データ全体の最大列数で揃える
     max_cols = max(len(row) for row in data)
-    for row in data:
+    for i in range(len(data)):
+        row = data[i]
         while len(row) < max_cols:
-            row.append(None)
+            row.append("")
+        data[i] = row
 
-    # DataFrame作成
     df = pd.DataFrame(data)
 
-    # ヘッダーの処理
-    if use_first_row_as_header and len(df) > 0:
-        # 最初の行をヘッダーとして使用
-        df.columns = df.iloc[0]
+    # ヘッダー処理
+    if use_first_row_as_header:
+        header = list(df.iloc[0])
         df = df.iloc[1:].reset_index(drop=True)
+        df.columns = header
 
-    # インデックスの処理
-    if use_first_column_as_index and len(df.columns) > 0:
-        # 最初の列をインデックスとして使用
+    # インデックス処理
+    if use_first_column_as_index:
         df = df.set_index(df.columns[0])
 
     return df
 
 # LaTeX形式に変換する関数
-def dataframe_to_latex(df):
-    """DataFrameをLaTeX表形式に変換"""
+def dataframe_to_latex(df, caption="", label="", position="h"):
     if df.empty:
         return ""
 
-    # 列数を取得
+    # 列数はヘッダーの列数
     num_cols = len(df.columns)
+    col_format = "l" + "c" * (num_cols - 1)
 
-    # LaTeX表のヘッダー
-    latex_code = "\\begin{tabular}{|" + "c|" * num_cols + "}\n\\hline\n"
+    latex_code = f"\\begin{{table}}[{position}]\n"
+    latex_code += "    \\centering\n"
 
-    # ヘッダー行
-    header_row = " & ".join(str(col) for col in df.columns)
-    latex_code += header_row + " \\\\\n\\hline\n"
+    if caption:
+        latex_code += f"    \\caption{{{caption}}}\n"
+
+    latex_code += f"    \\begin{{tabular}}{{{col_format}}}\n"
+    latex_code += "        \\hline\n"
+
+    # ヘッダー行：左上セルだけ空白
+    header_cells = [""] + [f"\\text{{{str(col)}}}" for col in df.columns[0:(len(df.columns) - 1)]]
+    latex_code += "        " + " & ".join(header_cells) + " \\\\\n"
+    latex_code += "        \\hline\n"
 
     # データ行
     for _, row in df.iterrows():
-        row_data = []
-        for cell in row:
-            # 空のセルは空白として扱う
-            cell_str = str(cell) if pd.notna(cell) and str(cell).strip() != "" else ""
-            row_data.append(cell_str)
-        latex_code += " & ".join(row_data) + " \\\\\n\\hline\n"
+        row_data = [str(c) for c in row]
+        latex_code += "        " + " & ".join(row_data) + " \\\\\n"
 
-    # フッター
-    latex_code += "\\end{tabular}"
+    latex_code += "        \\hline\n"
+    latex_code += "    \\end{tabular}\n"
+
+    if label:
+        latex_code += f"    \\label{{{label}}}\n"
+
+    latex_code += "\\end{table}"
 
     return latex_code
 
-# タブで入力モード
-st.subheader("📋 Notionなどから表を貼り付け")
 
-# ヘッダー設定オプション
-col_opt1, col_opt2 = st.columns(2)
-with col_opt1:
-    use_header = st.checkbox("最初の行をヘッダーとして扱う", value=True, key="use_header_checkbox")
-with col_opt2:
-    use_index = st.checkbox("最初の列を行名として扱う", value=True, key="use_index_checkbox")
+# 入力モードの選択
+tab1, tab2 = st.tabs(["📋 Notion貼り付け", "🎨 インタラクティブ表作成"])
 
-tab_input = st.text_area(
-    "タブ区切りの表を貼り付けてください",
-    height=150,
-    placeholder="課題2成功\t課題2失敗\t合計\t\n課題1成功\t7247\t177\t7424\t\n課題1失敗\t74\t4102\t4176\t\n合計\t7321\t4279\t\t",
-    help="NotionやExcelから表をコピーして貼り付けてください。タブ区切りで自動認識します。"
-)
+with tab1:
+    st.subheader("📋 Notionなどから表を貼り付け")
 
-if tab_input.strip():
+    # ヘッダー設定オプション
+    col_opt1, col_opt2 = st.columns(2)
+    with col_opt1:
+        use_header = st.checkbox("最初の行をヘッダーとして扱う", value=True, key="use_header_checkbox")
+    with col_opt2:
+        use_index = st.checkbox("最初の列を行名として扱う", value=True, key="use_index_checkbox")
+
+    tab_input = st.text_area(
+        "タブ区切りの表を貼り付けてください",
+        height=150,
+        placeholder="\t課題2成功\t課題2失敗\t合計\t\n課題1成功\t7247\t166\t7424\t\n課題1失敗\t74\t4102\t4176\t\n合計\t7321\t4279\t\t",
+        help="NotionやExcelから表をコピーして貼り付けてください．タブ区切りで自動認識します．"
+    )
+
+    # デフォルト表示用のサンプルデータ
+    sample_data = "\t課題2成功\t課題2失敗\t合計\t\n課題1成功\t7247\t166\t7424\t\n課題1失敗\t74\t4102\t4176\t\n合計\t7321\t4279\t\t"
+    
+    # 入力データまたはサンプルデータを使用
+    input_data = tab_input.strip() if tab_input.strip() else sample_data
+    
     try:
-        parsed_df = parse_tab_separated_text(tab_input, use_first_row_as_header=use_header, use_first_column_as_index=use_index)
+        parsed_df = parse_tab_separated_text(input_data, use_first_row_as_header=use_header)
 
         if not parsed_df.empty:
-            st.success(f"✅ 表を解析しました: {len(parsed_df)}行 × {len(parsed_df.columns)}列")
+            if tab_input.strip():
+                st.success(f"✅ 表を解析しました: {len(parsed_df)}行 × {len(parsed_df.columns)}列")
+            else:
+                st.info("💡 サンプル表を表示しています．実際の表を貼り付けてください．")
 
-            # 解析された表を表示
-            st.subheader("📊 解析された表")
-            st.dataframe(parsed_df, use_container_width=True)
+            # LaTeX設定
+            st.subheader("⚙️ LaTeX設定")
+            col1, col2 = st.columns(2)
+            with col1:
+                caption = st.text_input("キャプション", placeholder="表のタイトルを入力", key="pasted_caption")
+                label = st.text_input("ラベル", placeholder="tab:example", key="pasted_label")
+            with col2:
+                position_options = {"h": "ここ(here)", "t": "上(top)", "b": "下(bottom)", "p": "別ページ(page)"}
+                position = st.selectbox("位置", options=list(position_options.keys()),
+                                      format_func=lambda x: position_options[x], key="pasted_position")
 
             # LaTeXコード生成
-            latex_code = dataframe_to_latex(parsed_df)
+            latex_code = dataframe_to_latex(parsed_df, caption=caption, label=label, position=position)
             st.subheader("📄 LaTeXコード")
             st.code(latex_code, language="latex")
 
@@ -143,201 +171,139 @@ if tab_input.strip():
                     mime="text/html",
                     key="pasted_html_download"
                 )
-
         else:
-            st.warning("⚠️ 有効な表データを検出できませんでした。")
+            if tab_input.strip():
+                st.warning("⚠️ 有効な表データを検出できませんでした．")
 
     except Exception as e:
-        st.error(f"❌ 表の解析に失敗しました: {e}")
+        if tab_input.strip():
+            st.error(f"❌ 表の解析に失敗しました: {e}")
+        else:
+            st.error("❌ サンプルデータの解析に失敗しました．")
 
-st.markdown("---")
+with tab2:
+    st.subheader("🎨 インタラクティブ表作成")
 
-# 既存のインタラクティブ表作成機能
-st.subheader("🎨 インタラクティブ表作成")
+    # 表のサイズ設定
+    col1, col2 = st.columns(2)
+    with col1:
+        rows = st.number_input("行数", min_value=1, max_value=20, value=3, step=1, key="interactive_rows")
+    with col2:
+        cols = st.number_input("列数", min_value=1, max_value=10, value=3, step=1, key="interactive_cols")
 
-# 表のサイズ設定
-col1, col2 = st.columns(2)
-with col1:
-    rows = st.number_input("行数", min_value=1, max_value=20, value=3, step=1, key="interactive_rows")
-with col2:
-    cols = st.number_input("列数", min_value=1, max_value=10, value=3, step=1, key="interactive_cols")
-
-# 初期データの作成
-if 'table_data' not in st.session_state or st.button("🔄 新しい表を作成"):
-    # 空のDataFrameを作成
-    data = {}
+    # 列名の設定
+    st.subheader("📋 列名の設定")
+    col_names = []
+    
+    # 列数に応じてレイアウトを決定
+    if cols <= 3:
+        cols_input = st.columns(cols)
+    elif cols <= 6:
+        cols_input = st.columns(3)
+    else:
+        cols_input = st.columns(4)
+    
     for i in range(cols):
-        col_name = f"列{i+1}"
-        data[col_name] = [""] * rows
-    st.session_state.table_data = pd.DataFrame(data)
+        col_idx = i % len(cols_input)
+        with cols_input[col_idx]:
+            default_name = f"列{i+1}"
+            if f'col_name_{i}' in st.session_state:
+                default_name = st.session_state[f'col_name_{i}']
+            col_name = st.text_input(
+                f"列{i+1}",
+                value=default_name,
+                key=f"col_name_input_{i}",
+                label_visibility="collapsed"
+            )
+            col_names.append(col_name)
+            st.session_state[f'col_name_{i}'] = col_name
 
-# 表の編集
-st.subheader("📝 表の編集")
-edited_df = st.data_editor(
-    st.session_state.table_data,
-    num_rows="dynamic",
-    width="stretch",
-    key="table_editor"
-)
+    # 初期データの作成
+    if 'table_data' not in st.session_state or st.button("🔄 新しい表を作成"):
+        # 列名をリセット
+        for i in range(10):  # 最大10列まで
+            if f'col_name_{i}' in st.session_state:
+                del st.session_state[f'col_name_{i}']
+        
+        # 空のDataFrameを作成
+        data = {}
+        for i in range(cols):
+            col_name = col_names[i] if i < len(col_names) else f"列{i+1}"
+            data[col_name] = [""] * (rows)
+        st.session_state.table_data = pd.DataFrame(data)
 
-# 編集されたデータをセッションステートに保存
-st.session_state.table_data = edited_df
-
-# LaTeX形式に変換する関数
-def dataframe_to_latex(df):
-    """DataFrameをLaTeX表形式に変換"""
-    if df.empty:
-        return ""
-
-    # 列数を取得
-    num_cols = len(df.columns)
-
-    # LaTeX表のヘッダー
-    latex_code = "\\begin{tabular}{|" + "c|" * num_cols + "}\n\\hline\n"
-
-    # ヘッダー行
-    header_row = " & ".join(df.columns)
-    latex_code += header_row + " \\\\\n\\hline\n"
-
-    # データ行
-    for _, row in df.iterrows():
-        row_data = []
-        for cell in row:
-            # 空のセルは空白として扱う
-            cell_str = str(cell) if pd.notna(cell) and str(cell).strip() != "" else ""
-            row_data.append(cell_str)
-        latex_code += " & ".join(row_data) + " \\\\\n\\hline\n"
-
-    # フッター
-    latex_code += "\\end{tabular}"
-
-    return latex_code
-
-# LaTeXコードの生成と表示
-st.subheader("📄 LaTeXコード")
-latex_code = dataframe_to_latex(edited_df)
-
-# LaTeXコードを表示
-st.code(latex_code, language="latex")
-
-
-# エクスポート機能
-st.subheader("💾 エクスポート")
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    # CSVエクスポート
-    csv_data = edited_df.to_csv(index=False)
-    st.download_button(
-        label="📊 CSVダウンロード",
-        data=csv_data,
-        file_name="table.csv",
-        mime="text/csv",
-        key="csv_download"
+    # 表の編集
+    st.subheader("📝 表の編集")
+    edited_df = st.data_editor(
+        st.session_state.table_data,
+        num_rows="dynamic",
+        width="stretch",
+        key="table_editor"
     )
 
-with col2:
-    # HTMLエクスポート
-    html_table = edited_df.to_html(index=False, border=1, justify='center')
-    st.download_button(
-        label="🌐 HTMLダウンロード",
-        data=f"<html><body>{html_table}</body></html>",
-        file_name="table.html",
-        mime="text/html",
-        key="html_download"
-    )
+    # 編集されたデータをセッションステートに保存
+    st.session_state.table_data = edited_df
 
-with col3:
-    # LaTeXファイルダウンロード
-    st.download_button(
-        label="📄 LaTeXファイルダウンロード",
-        data=latex_code,
-        file_name="table.tex",
-        mime="text/plain",
-        key="latex_download"
-    )
+    # LaTeXコードの生成と表示
+    st.subheader("📄 LaTeXコード")
 
-# プレビュー表示（改善版）
-st.subheader("👀 表のプレビュー")
-st.markdown("**現在の表の見た目:**")
+    # LaTeX設定
+    col1, col2 = st.columns(2)
+    with col1:
+        caption = st.text_input("キャプション", placeholder="表のタイトルを入力", key="interactive_caption")
+        label = st.text_input("ラベル", placeholder="tab:example", key="interactive_label")
+    with col2:
+        position_options = {"h": "ここ(here)", "t": "上(top)", "b": "下(bottom)", "p": "別ページ(page)"}
+        position = st.selectbox("位置", options=list(position_options.keys()),
+                              format_func=lambda x: position_options[x], key="interactive_position")
 
-# HTMLテーブルとしてプレビュー表示
-html_preview = f"""
-<style>
-.preview-table {{
-    border-collapse: collapse;
-    width: 100%;
-    margin: 10px 0;
-    font-family: Arial, sans-serif;
-}}
-.preview-table th, .preview-table td {{
-    border: 1px solid #ddd;
-    padding: 8px 12px;
-    text-align: center;
-}}
-.preview-table th {{
-    background-color: #f2f2f2;
-    font-weight: bold;
-}}
-.preview-table tr:nth-child(even) {{
-    background-color: #f9f9f9;
-}}
-.preview-table tr:hover {{
-    background-color: #f5f5f5;
-}}
-</style>
-"""
+    # LaTeX用にダミー列を追加（関数を変えない場合の対応）
+    df_for_latex = edited_df.copy()
+    df_for_latex[""] = ""  # 右端に空列を追加
+    
+    latex_code = dataframe_to_latex(df_for_latex, caption=caption, label=label, position=position)
 
-html_preview += edited_df.to_html(
-    index=False,
-    classes='preview-table',
-    border=0,
-    justify='center'
-)
 
-st.markdown(html_preview, unsafe_allow_html=True)
-
-# 統計情報
-st.subheader("📊 表の情報")
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("行数", len(edited_df))
-with col2:
-    st.metric("列数", len(edited_df.columns))
-with col3:
-    total_cells = len(edited_df) * len(edited_df.columns)
-    filled_cells = edited_df.notna().sum().sum()
-    st.metric("入力済みセル", f"{filled_cells}/{total_cells}")
-
-# 印刷用ビュー
-if st.button("🖨️ 印刷用ビュー"):
-    st.markdown("---")
-    st.markdown("### 🖨️ 印刷用ビュー")
-    st.markdown("このビューを印刷（Ctrl+P）して表のスクリーンショットとして使用できます。")
-
-    # 印刷用スタイル
-    print_html = f"""
-    <style>
-    @media print {{
-        body {{ font-family: Arial, sans-serif; }}
-        table {{ border-collapse: collapse; width: 100%; }}
-        th, td {{ border: 1px solid black; padding: 8px; text-align: center; }}
-        th {{ background-color: #f0f0f0; font-weight: bold; }}
-    }}
-    </style>
-    """
-
-    print_html += edited_df.to_html(
-        index=False,
-        border=1,
-        justify='center'
-    )
-
-    st.markdown(print_html, unsafe_allow_html=True)
-
-    # LaTeXコードも印刷用に
-    st.markdown("### LaTeXコード:")
+    # LaTeXコードを表示
     st.code(latex_code, language="latex")
+
+
+    # エクスポート機能
+    st.subheader("💾 エクスポート")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        # CSVエクスポート
+        csv_data = edited_df.to_csv(index=False)
+        st.download_button(
+            label="📊 CSVダウンロード",
+            data=csv_data,
+            file_name="table.csv",
+            mime="text/csv",
+            key="csv_download"
+        )
+
+    with col2:
+        # HTMLエクスポート
+        html_table = edited_df.to_html(index=False, border=1, justify='center')
+        st.download_button(
+            label="🌐 HTMLダウンロード",
+            data=f"<html><body>{html_table}</body></html>",
+            file_name="table.html",
+            mime="text/html",
+            key="html_download"
+        )
+
+    with col3:
+        # LaTeXファイルダウンロード
+        st.download_button(
+            label="📄 LaTeXファイルダウンロード",
+            data=latex_code,
+            file_name="table.tex",
+            mime="text/plain",
+            key="latex_download"
+        )
+
 
 # 使い方の説明
 with st.expander("📚 使い方"):
@@ -348,10 +314,12 @@ with st.expander("📚 使い方"):
     3. 自動的にLaTeX形式に変換されます
 
     ## 🎨 インタラクティブ作成
-    1. **表のサイズを設定**: 行数と列数を指定して「新しい表を作成」をクリック
-    2. **表を編集**: 各セルをクリックして値を入力
-    3. **LaTeXコードを確認**: 表の下にリアルタイムでLaTeX形式のコードが生成されます
-    4. **コードをコピー**: 下のテキストエリアからLaTeXコードをコピーして使用
+    1. **表のサイズを設定**: 行数と列数を指定
+    2. **列名を設定**: 各列に名前を付ける
+    3. **新しい表を作成**: 「新しい表を作成」ボタンをクリック
+    4. **表を編集**: 各セルをクリックして値を入力
+    5. **LaTeXコードを確認**: 表の下にリアルタイムでLaTeX形式のコードが生成されます
+    6. **コードをコピー**: 下のテキストエリアからLaTeXコードをコピーして使用
 
     **LaTeXでの使用例:**
     ```latex
@@ -363,4 +331,4 @@ with st.expander("📚 使い方"):
     """)
 
 st.markdown("---")
-st.caption("💡 表の値を変更すると、LaTeXコードが自動的に更新されます。")
+st.caption("💡 表の値を変更すると，LaTeXコードが自動的に更新されます．")
