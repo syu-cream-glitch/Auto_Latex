@@ -54,7 +54,7 @@ def parse_tab_separated_text(text, use_first_row_as_header=True, use_first_colum
     return df
 
 # LaTeX形式に変換する関数
-def dataframe_to_latex(df, caption="", label="", position="h"):
+def dataframe_to_latex(df, caption="", label="", position="h", caption_position="上"):
     if df.empty:
         return ""
 
@@ -65,7 +65,7 @@ def dataframe_to_latex(df, caption="", label="", position="h"):
     latex_code = f"\\begin{{table}}[{position}]\n"
     latex_code += "    \\centering\n"
 
-    if caption:
+    if caption and caption_position == "上":
         latex_code += f"    \\caption{{{caption}}}\n"
 
     latex_code += f"    \\begin{{tabular}}{{{col_format}}}\n"
@@ -83,6 +83,10 @@ def dataframe_to_latex(df, caption="", label="", position="h"):
 
     latex_code += "        \\hline\n"
     latex_code += "    \\end{tabular}\n"
+
+    # 下キャプションの場合
+    if caption and caption_position == "下":
+        latex_code += f"    \\caption{{{caption}}}\n"
 
     if label:
         latex_code += f"    \\label{{{label}}}\n"
@@ -137,9 +141,10 @@ with tab1:
                 position_options = {"h": "ここ(here)", "t": "上(top)", "b": "下(bottom)", "p": "別ページ(page)"}
                 position = st.selectbox("位置", options=list(position_options.keys()),
                                       format_func=lambda x: position_options[x], key="pasted_position")
+                caption_position = st.radio("キャプションの位置", options=["上", "下"], index=0, key="caption_position")
 
             # LaTeXコード生成
-            latex_code = dataframe_to_latex(parsed_df, caption=caption, label=label, position=position)
+            latex_code = dataframe_to_latex(parsed_df, caption=caption, label=label, position=position, caption_position=caption_position)
             st.subheader("📄 LaTeXコード")
             st.code(latex_code, language="latex")
 
