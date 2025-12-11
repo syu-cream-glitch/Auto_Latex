@@ -54,13 +54,13 @@ def parse_tab_separated_text(text, use_first_row_as_header=True, use_first_colum
     return df
 
 # LaTeX形式に変換する関数
-def dataframe_to_latex(df, caption="", label="", position="h", caption_position="上"):
+def dataframe_to_latex(df, caption="", label="", position="h", caption_position="上", left_centered=False):
     if df.empty:
         return ""
 
     # 列数はヘッダーの列数
     num_cols = len(df.columns)
-    col_format = "l" + "c" * (num_cols - 1)
+    col_format = "c" + "c" * (num_cols - 1) if left_centered else "l" + "c" * (num_cols - 1)
 
     latex_code = f"\\begin{{table}}[{position}]\n"
     latex_code += "    \\centering\n"
@@ -141,10 +141,11 @@ with tab1:
                 position_options = {"h": "ここ(here)", "t": "上(top)", "b": "下(bottom)", "p": "別ページ(page)"}
                 position = st.selectbox("位置", options=list(position_options.keys()),
                                       format_func=lambda x: position_options[x], key="pasted_position")
-                caption_position = st.radio("キャプションの位置", options=["上", "下"], index=0, key="caption_position")
+                caption_position = st.radio("キャプションの位置", options=["上", "下"], index=0, key="caption_position_pasted")
+                left_centered = st.checkbox("左端も中央寄せにする", value=False, key="left_centered_pasted")
 
             # LaTeXコード生成
-            latex_code = dataframe_to_latex(parsed_df, caption=caption, label=label, position=position, caption_position=caption_position)
+            latex_code = dataframe_to_latex(parsed_df, caption=caption, label=label, position=position, caption_position=caption_position, left_centered=left_centered)
             st.subheader("📄 LaTeXコード")
             st.code(latex_code, language="latex")
 
@@ -261,12 +262,14 @@ with tab2:
         position_options = {"h": "ここ(here)", "t": "上(top)", "b": "下(bottom)", "p": "別ページ(page)"}
         position = st.selectbox("位置", options=list(position_options.keys()),
                               format_func=lambda x: position_options[x], key="interactive_position")
+        caption_position = st.radio("キャプションの位置", options=["上", "下"], index=0, key="caption_position_interactive")
+        left_centered = st.checkbox("左端も中央寄せにする", value=False, key="left_centered_interactive")
 
     # LaTeX用にダミー列を追加（関数を変えない場合の対応）
     df_for_latex = edited_df.copy()
     df_for_latex[""] = ""  # 右端に空列を追加
     
-    latex_code = dataframe_to_latex(df_for_latex, caption=caption, label=label, position=position)
+    latex_code = dataframe_to_latex(df_for_latex, caption=caption, label=label, position=position, caption_position=caption_position, left_centered=left_centered)
 
 
     # LaTeXコードを表示
