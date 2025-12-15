@@ -95,9 +95,123 @@ def dataframe_to_latex(df, caption="", label="", position="h", caption_position=
 
     return latex_code
 
+# --- ヘッダー処理・HTMLプレビュー用関数 ---
+def generate_preview_html(header_df, body_df):
+    """
+    現在のDataFrameの状態から、結合状態を可視化したHTMLを作成する関数
+    """
+    html = ['<table style="border-collapse: collapse; width: 100%; text-align: center; font-family: sans-serif;">']
+    
+    # --- ヘッダー部分の生成 ---
+    header_rows = header_df.values.tolist()
+    n_cols = len(header_df.columns)
+    
+    for r_idx, row in enumerate(header_rows):
+        html.append("<tr>")
+        c_idx = 0
+        while c_idx < n_cols:
+            current_val = str(row[c_idx])
+            colspan = 1
+            rowspan = 1
+            
+            # 横結合チェック
+            while (c_idx + colspan < n_cols) and (str(row[c_idx + colspan]) == current_val):
+                colspan += 1
+            
+            # 縦結合チェック（簡易版：下の行と同じならrowspan=2、上の行と同じならスキップ）
+            is_vertical_merge_start = False
+            skip_cell = False
+            
+            if r_idx + 1 < len(header_rows):
+                if str(header_rows[r_idx+1][c_idx]) == current_val:
+                    rowspan = 2
+                    is_vertical_merge_start = True
+            
+            if r_idx > 0:
+                if str(header_rows[r_idx-1][c_idx]) == current_val:
+                    skip_cell = True
+            
+            # HTML生成
+            if not skip_cell:
+                # スタイル調整
+                bg_color = "#f0f2f6"
+                border = "1px solid #ddd"
+                cell_style = f"background-color: {bg_color}; border: {border}; padding: 8px; font-weight: bold;"
+                
+                # 属性作成
+                attrs = f'style="{cell_style}"'
+                if colspan > 1: attrs += f' colspan="{colspan}"'
+                if rowspan > 1: attrs += f' rowspan="{rowspan}"'
+                
+                html.append(f'<th {attrs}>{current_val}</th>')
+            
+            c_idx += colspan
+        html.append("</tr>")
+    
+    # --- ボディ部分の生成 ---
+    for _, row in body_df.iterrows():
+        html.append("<tr>")
+        for val in row:
+            val_str = str(val) if val is not None else ""
+            html.append(f'<td style="border: 1px solid #ddd; padding: 6px;">{val_str}</td>')
+        html.append("</tr>")
+        
+    html.append("</table>")
+    return "\n".join(html)
+
+def generate_complex_latex(header_df, body_df, caption, label, position):
+    """ LaTeXコード生成ロジック（前回のものと同じロジック） """
+    latex = []
+    pos_str = f"[{position}]" if position else ""
+    latex.append(f"\\begin{{table}}{pos_str}")
+    latex.append(f"\\centering")
+    if caption: latex.append(f"\\caption{{{caption}}}")
+    if label: latex.append(f"\\label{{{label}}}")
+    
+    n_cols = len(body_df.columns)
+    latex.append(f"\\begin{{tabular}}{{{'c' * n_cols}}}")
+    latex.append(f"\\toprule")
+
+    header_rows = header_df.values.tolist()
+    for r_idx, row in enumerate(header_rows):
+        row_latex = []
+        cmidrules = []
+        c_idx = 0
+        while c_idx < n_cols:
+            current_val = str(row[c_idx])
+            colspan = 1
+            while (c_idx + colspan < n_cols) and (str(row[c_idx + colspan]) == current_val):
+                colspan += 1
+            
+            cell_text = current_val
+            if r_idx + 1 < len(header_rows) and str(header_rows[r_idx+1][c_idx]) == current_val:
+                 if r_idx > 0 and str(header_rows[r_idx-1][c_idx]) == current_val: cell_text = ""
+                 else: cell_text = f"\\multirow{{2}}{{*}}{{{current_val}}}"
+            elif r_idx > 0 and str(header_rows[r_idx-1][c_idx]) == current_val: cell_text = ""
+            
+            if colspan > 1:
+                row_latex.append(f"\\multicolumn{{{colspan}}}{{c}}{{{cell_text}}}")
+                if current_val.strip() != "" and (r_idx + 1 < len(header_rows)):
+                     # 下の行のセル構成を見て線を引くか判断（簡易的に全部引く）
+                     cmidrules.append(f"\\cmidrule(lr){{{c_idx+1}-{c_idx+colspan}}}")
+            else:
+                row_latex.append(cell_text)
+            c_idx += colspan
+        
+        latex.append(" & ".join(row_latex) + " \\\\")
+        if cmidrules: latex.append(" ".join(cmidrules))
+
+    latex.append(f"\\midrule")
+    for _, row in body_df.iterrows():
+        row_str = " & ".join([str(x) if x is not None else "" for x in row])
+        latex.append(f"{row_str} \\\\")
+    latex.append(f"\\bottomrule")
+    latex.append(f"\\end{{tabular}}")
+    latex.append(f"\\end{{table}}")
+    return "\n".join(latex)
 
 # 入力モードの選択
-tab1, tab2 = st.tabs(["📋 Notion貼り付け", "🎨 インタラクティブ表作成"])
+tab1, tab2, tab3 = st.tabs(["📋 Notion貼り付け", "🎨 インタラクティブ表作成", "📉 高度表作成"])
 
 with tab1:
     st.subheader("📋 Notionなどから表を貼り付け")
@@ -312,6 +426,82 @@ with tab2:
             key="latex_download"
         )
 
+with tab3:
+    st.subheader("🧩 リアルタイム・プレビュー付き表作成")
+    st.markdown("""
+    **使い方：** 隣り合ったセルに**「同じ文字」**を入力すると、下のプレビュー画面で自動的に結合されます。
+    """)
+
+    # テンプレートボタン
+    if st.button("深海データセットの例をロード", key="load_template_btn"):
+        st.session_state.header_data_tab3 = pd.DataFrame([
+            ["観測コード", "水温 (C)", "水温 (C)", "塩分濃度", "塩分濃度", "深度"],
+            ["観測コード", "エリアA", "エリアB", "ゾーンX", "ゾーンY", "トレンチZ"]
+        ])
+        st.session_state.body_data_tab3 = pd.DataFrame([
+            ["データセット X01", "5.1", "1.3", "34.90", "35.15", "9870.5"],
+            ["解析セット S02", "22.8", "7.7", "33.05", "36.88", "1234.9"]
+        ])
+        st.rerun()
+
+    # サイズ設定
+    with st.expander("📏 行数・列数の変更", expanded=False):
+        c1, c2, c3 = st.columns(3)
+        rows_t3 = c1.number_input("データ行数", 1, 20, 2, key="rows_t3")
+        cols_t3 = c2.number_input("列数", 1, 10, 6, key="cols_t3")
+        h_rows_t3 = c3.number_input("ヘッダー段数", 1, 3, 2, key="h_rows_t3")
+
+    # データ初期化
+    if 'header_data_tab3' not in st.session_state:
+        st.session_state.header_data_tab3 = pd.DataFrame("", index=range(h_rows_t3), columns=range(cols_t3))
+    if 'body_data_tab3' not in st.session_state:
+        st.session_state.body_data_tab3 = pd.DataFrame("", index=range(rows_t3), columns=range(cols_t3))
+
+    # リサイズ対応
+    if st.session_state.header_data_tab3.shape != (h_rows_t3, cols_t3):
+        st.session_state.header_data_tab3 = pd.DataFrame("", index=range(h_rows_t3), columns=range(cols_t3))
+    if st.session_state.body_data_tab3.shape != (rows_t3, cols_t3):
+        st.session_state.body_data_tab3 = pd.DataFrame("", index=range(rows_t3), columns=range(cols_t3))
+
+    col_editor, col_preview = st.columns([1, 1])
+
+    with col_editor:
+        st.write("###### 1. ヘッダー編集 (同じ文字で結合)")
+        edited_header = st.data_editor(
+            st.session_state.header_data_tab3,
+            key="header_editor_t3",
+            width="stretch"  # リクエスト通り変更
+        )
+        st.session_state.header_data_tab3 = edited_header
+
+        st.write("###### 2. データ入力")
+        edited_body = st.data_editor(
+            st.session_state.body_data_tab3,
+            key="body_editor_t3",
+            width="stretch"  # リクエスト通り変更
+        )
+        st.session_state.body_data_tab3 = edited_body
+
+    with col_preview:
+        st.write("###### 👀 仕上がりプレビュー")
+        # ここでHTMLプレビューを表示
+        preview_html = generate_preview_html(edited_header, edited_body)
+        st.markdown(preview_html, unsafe_allow_html=True)
+        st.info("👆 同じ文字が隣り合うと、このように結合されて表示されます。")
+
+    st.markdown("---")
+    
+    # LaTeX出力
+    c_out1, c_out2 = st.columns([3, 1])
+    with c_out1:
+        caption = st.text_input("キャプション", "深海探査データ", key="cap_t3")
+        label = st.text_input("ラベル", "tab:deepsea", key="lbl_t3")
+    with c_out2:
+        pos = st.selectbox("位置", ["h", "t", "b"], key="pos_t3")
+
+    if st.button("LaTeXコードを生成", type="primary", key="gen_btn_t3"):
+        latex = generate_complex_latex(edited_header, edited_body, caption, label, pos)
+        st.code(latex, language="latex")
 
 # 使い方の説明
 with st.expander("📚 使い方"):
