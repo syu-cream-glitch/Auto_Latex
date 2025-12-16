@@ -63,7 +63,8 @@ def render_tab2():
     )
 
     # 編集されたデータをセッションステートに保存
-    st.session_state.table_data = edited_df
+    #重複していたためコメントアウト
+    #st.session_state.table_data = edited_df
 
     # LaTeXコードの生成と表示
     st.subheader("📄 LaTeXコード")

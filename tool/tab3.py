@@ -48,7 +48,8 @@ def render_tab3():
             key="header_editor_t3",
             width="stretch"  # リクエスト通り変更
         )
-        st.session_state.header_data_tab3 = edited_header
+        #重複しているのでコメントアウト：連続の編集ができない
+        #st.session_state.header_data_tab3 = edited_header
 
         st.write("###### 2. データ入力")
         edited_body = st.data_editor(
@@ -56,7 +57,8 @@ def render_tab3():
             key="body_editor_t3",
             width="stretch"  # リクエスト通り変更
         )
-        st.session_state.body_data_tab3 = edited_body
+        #上記と同じ理由でコメントアウト
+        #st.session_state.body_data_tab3 = edited_body
 
     with col_preview:
         st.write("###### 👀 仕上がりプレビュー")
